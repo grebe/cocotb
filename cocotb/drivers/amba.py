@@ -27,8 +27,9 @@
 """Drivers for Advanced Microcontroller Bus Architecture."""
 
 import cocotb
+from cocotb.decorators import coroutine
 from cocotb.triggers import RisingEdge, ReadOnly, Lock
-from cocotb.drivers import BusDriver
+from cocotb.drivers import BusDriver, ValidatedBusDriver
 from cocotb.result import ReturnValue
 from cocotb.binary import BinaryValue
 
@@ -38,6 +39,163 @@ import array
 class AXIProtocolError(Exception):
     pass
 
+class AXI4StreamMaster(ValidatedBusDriver):
+    """AXI4-Stream Master Driver"""
+
+    _signals = ["TVALID"]
+    _optional_signals = [
+      "TREADY",
+      "TKEEP",
+      "TSTRB",
+      "TLAST",
+      "TID",
+      "TDEST",
+      "TUSER",
+      "TDATA"
+    ]
+
+    _default_config = {}
+
+    def __init__(self, entity, name, clock, **kwargs):
+        config = kwargs.pop('config', {})
+        ValidatedBusDriver.__init__(self, entity, name, clock, **kwargs)
+
+        self.config = AXI4StreamMaster._default_config.copy()
+
+        for configoption, value in config.items():
+            self.config[configoption] = value
+
+            self.log.debug("Setting config option %s to %s", configoption, str(value))
+
+        # self._signals = [self.name_mapping(s) for s in self._signals]
+        # self._optional_signals = [self.name_mapping(s) for s in self._optional_signals]
+
+
+        self.bus.TVALID <= 0
+        if hasattr(self.bus, "TDATA"):
+            self.bus.TDATA  <= BinaryValue(n_bits=len(self.bus.TDATA),
+                                       value="x" * len(self.bus.TDATA))
+        if hasattr(self.bus, "TKEEP"):
+            self.bus.TKEEP  <= BinaryValue(n_bits=len(self.bus.TKEEP),
+                                       value = "1" * len(self.bus.TKEEP))
+        if hasattr(self.bus, "TSTRB"):
+            self.bus.TSTRB  <= BinaryValue(n_bits=len(self.bus.TSTRB),
+                                       value = "1" * len(self.bus.TSTRB))
+
+        if hasattr(self.bus, "TLAST"):
+            self.bus.TLAST  <= 0
+        if hasattr(self.bus, "TID"):
+            self.bus.TID    <= 0
+        if hasattr(self.bus, "TDEST"):
+            self.bus.TDEST  <= 0
+        if hasattr(self.bus, "TUSER"):
+            self.bus.TUSER  <= 0
+
+    @coroutine
+    def _wait_ready(self):
+        yield ReadOnly()
+        while not self.bus.TREADY.value:
+            yield RisingEdge(self.clock)
+            yield ReadOnly()
+
+    @coroutine
+    def _driver_send(self, data=None, strb=None, keep=None, last=None, id=None, dest=None, user=None, sync=True):
+        self.log.debug(f"Sending AXI4-Stream transmission: {data}")
+        clkedge = RisingEdge(self.clock)
+
+        if hasattr(self.bus, "TDATA"):
+            dataword = BinaryValue(n_bits=len(self.bus.TDATA))
+        if hasattr(self.bus, "TSTRB"):
+            strbword = BinaryValue(n_bits=len(self.bus.TSTRB))
+        if hasattr(self.bus, "TKEEP"):
+            keepword = BinaryValue(n_bits=len(self.bus.TKEEP))
+        if hasattr(self.bus, "TLAST"):
+            lastword = BinaryValue(n_bits=1)
+        if hasattr(self.bus, "TID"):
+            idword = BinaryValue(n_bits=len(self.bus.TID))
+        if hasattr(self.bus, "TDEST"):
+            destword = BinaryValue(n_bits=len(self.bus.TDEST))
+        if hasattr(self.bus, "TUSER"):
+            userword = BinaryValue(n_bits=len(self.bus.TUSER))
+
+        self.bus.TVALID <= 0
+        if sync:
+            yield clkedge
+        if not self.on:
+            self.bus.TVALID <= 0
+            for _ in range(self.off):
+                yield clkedge
+            self._next_valids()
+
+        if self.on is not True and self.on:
+            self.on -= 1
+
+        self.bus.TVALID <= 1
+        if hasattr(self.bus, "TDATA"):
+            dataword.assign(data)
+            self.bus.TDATA <= dataword
+        if hasattr(self.bus, "TSTRB"):
+            strbword.assign(strb)
+            self.bus.TSTRB <= strbword
+        if hasattr(self.bus, "TKEEP"):
+            keepword.assign(keep)
+            self.bus.TKEEP <= keepword
+        if hasattr(self.bus, "TLAST"):
+            lastword.assign(last)
+            self.bus.TLAST <= lastword
+        if hasattr(self.bus, "TID"):
+            idword.assign(id)
+            self.bus.TID <= idword
+        if hasattr(self.bus, "TDEST"):
+            destword.assign(dest)
+            self.bus.TDEST <= destword
+        if hasattr(self.bus, "TUSER"):
+            userword.assign(user)
+            self.bus.TUSER <= userword
+
+        if hasattr(self.bus, "TREADY"):
+            yield self._wait_ready()
+        yield clkedge
+        self.bus.TVALID <= 0
+        if hasattr(self.bus, "TDATA"):
+            dataword.binstr = "x" * len(self.bus.TDATA)
+
+    def _send_string(self, string, sync=True, id=None, dest=None):
+        if not hasattr(self.bus, "TDATA"):
+            raise AttributeError("Cannot send string without TDATA")
+        clkedge = RisingEdge(self.clock)
+        n = int((len(self.bus.TDATA) + 7)/ 8)
+        strb = None
+        if hasattr(self.bus, "TSTRB"):
+            strb = "1" * len(self.bus.TSTRB)
+        keep = None
+        if hasattr(self.bus, "TKEEP"):
+            keep = "1" * len(self.bus.TKEEP)
+        last = None
+        if hasattr(self.bus, "TLAST"):
+            last = False
+        id = None
+        if hasattr(self.bus, "TID"):
+            id = 0
+        dest = None
+        if hasattr(self.bus, "TDEST"):
+            dest = 0
+        user = None
+        if hasattr(self.bus, "TUSER"):
+            user = 0
+
+        while string:
+            nbytes = min(len(string), n)
+            data = string[:nbytes]
+            if len(string) <= n:
+                if hasattr(self.bus, "TLAST"):
+                    last = True
+                if hasattr(self.bus, "TSTRB"):
+                    strb = "0" * (n - len(string)) + "1" * len(string)
+                string = ""
+            else:
+                string = string[n:]
+            self._driver_send(data=data, strb=strb, keep=keep, last=last, id=id, dest=dest, user=user, sync=sync)
 
 class AXI4LiteMaster(BusDriver):
     """AXI4-Lite Master.
@@ -348,12 +506,12 @@ class AXI4Slave(BusDriver):
 
             while True:
                 self.bus.RVALID <= 1
-                yield ReadOnly()
+                # yield ReadOnly()
                 if self.bus.RREADY.value:
                     _burst_diff = burst_length - burst_count
                     _st = _araddr + (_burst_diff * bytes_in_beat)
                     _end = _araddr + ((_burst_diff + 1) * bytes_in_beat)
-                    word.buff = self._memory[_st:_end].tostring()
+                    word.buff = str(self._memory[_st:_end].tostring())
                     self.bus.RDATA <= word
                     if burst_count == 1:
                         self.bus.RLAST <= 1
