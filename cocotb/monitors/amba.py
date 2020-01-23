@@ -1,11 +1,7 @@
-import warnings
-
 from cocotb.amba import AXI4StreamBus
-from cocotb.utils import hexdump
 from cocotb.decorators import coroutine
 from cocotb.monitors import BusMonitor
 from cocotb.triggers import RisingEdge, ReadOnly
-from cocotb.binary import BinaryValue
 
 class AmbaProtocolError(Exception):
     pass

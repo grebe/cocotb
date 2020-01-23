@@ -64,12 +64,12 @@ class AXI4StreamBus(TypedBus):
     """An AXI4-Streaming bus"""
     _signals = ["TVALID"]
     _optional_signals = [
-      "TREADY",
-      "TKEEP",
-      "TSTRB",
-      "TLAST",
-      "TID",
-      "TDEST",
-      "TUSER",
-      "TDATA"
+        "TREADY",
+        "TKEEP",
+        "TSTRB",
+        "TLAST",
+        "TID",
+        "TDEST",
+        "TUSER",
+        "TDATA"
     ]

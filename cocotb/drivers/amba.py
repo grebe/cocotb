@@ -63,10 +63,10 @@ class AXI4StreamMaster(ValidatedBusDriver):
                                        value="x" * len(self.bus.TDATA))
         if hasattr(self.bus, "TKEEP"):
             self.bus.TKEEP  <= BinaryValue(n_bits=len(self.bus.TKEEP),
-                                       value = "1" * len(self.bus.TKEEP))
+                                           value="1"*len(self.bus.TKEEP))
         if hasattr(self.bus, "TSTRB"):
             self.bus.TSTRB  <= BinaryValue(n_bits=len(self.bus.TSTRB),
-                                       value = "1" * len(self.bus.TSTRB))
+                                           value="1"*len(self.bus.TSTRB))
 
         if hasattr(self.bus, "TLAST"):
             self.bus.TLAST  <= 0
