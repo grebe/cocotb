@@ -1,5 +1,6 @@
 import warnings
 
+from cocotb.amba import AXI4StreamBus
 from cocotb.utils import hexdump
 from cocotb.decorators import coroutine
 from cocotb.monitors import BusMonitor
@@ -10,17 +11,7 @@ class AmbaProtocolError(Exception):
     pass
 
 class AXI4StreamMonitor(BusMonitor):
-    _signals = ["TVALID"]
-    _optional_signals = [
-      "TREADY",
-      "TKEEP",
-      "TSTRB",
-      "TLAST",
-      "TID",
-      "TDEST",
-      "TUSER",
-      "TDATA"
-    ]
+    _bus_type = AXI4StreamBus
 
     _default_config = {}
 
