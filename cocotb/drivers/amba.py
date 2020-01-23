@@ -28,7 +28,7 @@
 
 import cocotb
 from cocotb.decorators import coroutine
-from cocotb.amba import AXI4Bus, AXI4LiteBus
+from cocotb.amba import AXI4Bus, AXI4LiteBus, AXI4StreamBus
 from cocotb.triggers import RisingEdge, ReadOnly, Lock
 from cocotb.drivers import BusDriver, ValidatedBusDriver
 from cocotb.result import ReturnValue
@@ -43,18 +43,7 @@ class AXIProtocolError(Exception):
 class AXI4StreamMaster(ValidatedBusDriver):
     """AXI4-Stream Master Driver"""
 
-    _signals = ["TVALID"]
-    _optional_signals = [
-      "TREADY",
-      "TKEEP",
-      "TSTRB",
-      "TLAST",
-      "TID",
-      "TDEST",
-      "TUSER",
-      "TDATA"
-    ]
-
+    _bus_type = AXI4StreamBus
     _default_config = {}
 
     def __init__(self, entity, name, clock, **kwargs):
@@ -67,10 +56,6 @@ class AXI4StreamMaster(ValidatedBusDriver):
             self.config[configoption] = value
 
             self.log.debug("Setting config option %s to %s", configoption, str(value))
-
-        # self._signals = [self.name_mapping(s) for s in self._signals]
-        # self._optional_signals = [self.name_mapping(s) for s in self._optional_signals]
-
 
         self.bus.TVALID <= 0
         if hasattr(self.bus, "TDATA"):
