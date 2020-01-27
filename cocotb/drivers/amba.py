@@ -365,6 +365,11 @@ class AXI4Slave(BusDriver):
         self.bus.RVALID.setimmediatevalue(0)
         self.bus.RLAST.setimmediatevalue(0)
         self.bus.AWREADY.setimmediatevalue(1)
+        self.bus.BVALID.setimmediatevalue(0)
+        for i in ("BID", "RID", "BRESP", "RRESP"):
+            if hasattr(self.bus, i):
+                getattr(self.bus, i).setimmediatevalue(0)
+
         self._memory = memory
 
         self.write_address_busy = Lock("%s_wabusy" % name)
@@ -464,19 +469,20 @@ class AXI4Slave(BusDriver):
 
             yield clock_re
 
-            while True:
-                self.bus.RVALID <= 1
-                # yield ReadOnly()
+            self.bus.RVALID <= 1
+            self.bus.RLAST <= 0
+            while burst_count >= 0:
                 if self.bus.RREADY.value:
                     _burst_diff = burst_length - burst_count
                     _st = _araddr + (_burst_diff * bytes_in_beat)
                     _end = _araddr + ((_burst_diff + 1) * bytes_in_beat)
-                    word.buff = str(self._memory[_st:_end].tostring())
+                    byteorder = 'little'
+                    if self.big_endian:
+                        byteorder = 'big'
+                    word.integer = int.from_bytes(self._memory[_st:_end].tostring(), byteorder=byteorder)
                     self.bus.RDATA <= word
-                    if burst_count == 1:
+                    burst_count -= 1
+                    if burst_count == 0:
                         self.bus.RLAST <= 1
                 yield clock_re
-                burst_count -= 1
-                self.bus.RLAST <= 0
-                if burst_count == 0:
-                    break
+            self.bus.RVALID <= 0
