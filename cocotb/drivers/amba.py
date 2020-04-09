@@ -46,7 +46,9 @@ class AXI4StreamMaster(ValidatedBusDriver):
     _bus_type = AXI4StreamBus
     _default_config = {}
 
-    def __init__(self, entity, name, clock, **kwargs):
+    def __init__(self, entity, name, clock, big_endian=False, **kwargs):
+        self.big_endian = big_endian
+
         config = kwargs.pop('config', {})
         ValidatedBusDriver.__init__(self, entity, name, clock, **kwargs)
 
@@ -60,7 +62,8 @@ class AXI4StreamMaster(ValidatedBusDriver):
         self.bus.TVALID <= 0
         if hasattr(self.bus, "TDATA"):
             self.bus.TDATA  <= BinaryValue(n_bits=len(self.bus.TDATA),
-                                       value="x" * len(self.bus.TDATA))
+                                           value="x" * len(self.bus.TDATA),
+                                           bigEndian=self.big_endian)
         if hasattr(self.bus, "TKEEP"):
             self.bus.TKEEP  <= BinaryValue(n_bits=len(self.bus.TKEEP),
                                            value="1"*len(self.bus.TKEEP))
@@ -69,13 +72,13 @@ class AXI4StreamMaster(ValidatedBusDriver):
                                            value="1"*len(self.bus.TSTRB))
 
         if hasattr(self.bus, "TLAST"):
-            self.bus.TLAST  <= 0
+            self.bus.TLAST.setimmediatevalue(0)
         if hasattr(self.bus, "TID"):
-            self.bus.TID    <= 0
+            self.bus.TID.setimmediatevalue(0)
         if hasattr(self.bus, "TDEST"):
-            self.bus.TDEST  <= 0
+            self.bus.TDEST.setimmediatevalue(0)
         if hasattr(self.bus, "TUSER"):
-            self.bus.TUSER  <= 0
+            self.bus.TUSER.setimmediatevalue(0)
 
     @coroutine
     def _wait_ready(self):
@@ -90,7 +93,7 @@ class AXI4StreamMaster(ValidatedBusDriver):
         clkedge = RisingEdge(self.clock)
 
         if hasattr(self.bus, "TDATA"):
-            dataword = BinaryValue(n_bits=len(self.bus.TDATA))
+            dataword = BinaryValue(n_bits=len(self.bus.TDATA), bigEndian=self.big_endian)
         if hasattr(self.bus, "TSTRB"):
             strbword = BinaryValue(n_bits=len(self.bus.TSTRB))
         if hasattr(self.bus, "TKEEP"):
@@ -107,17 +110,18 @@ class AXI4StreamMaster(ValidatedBusDriver):
         self.bus.TVALID <= 0
         if sync:
             yield clkedge
-        if not self.on:
-            self.bus.TVALID <= 0
-            for _ in range(self.off):
-                yield clkedge
-            self._next_valids()
+        # if not self.on:
+        #     self.bus.TVALID <= 0
+        #     for _ in range(self.off):
+        #         yield clkedge
+        #     self._next_valids()
 
-        if self.on is not True and self.on:
-            self.on -= 1
+        # if self.on is not True and self.on:
+        #     self.on -= 1
 
         self.bus.TVALID <= 1
         if hasattr(self.bus, "TDATA"):
+            # print(f"Assigning {data}")
             dataword.assign(data)
             self.bus.TDATA <= dataword
         if hasattr(self.bus, "TSTRB"):
@@ -143,8 +147,8 @@ class AXI4StreamMaster(ValidatedBusDriver):
             yield self._wait_ready()
         yield clkedge
         self.bus.TVALID <= 0
-        if hasattr(self.bus, "TDATA"):
-            dataword.binstr = "x" * len(self.bus.TDATA)
+        # if hasattr(self.bus, "TDATA"):
+        #     dataword.binstr = "x" * len(self.bus.TDATA)
 
     def _send_string(self, string, sync=True, id=None, dest=None):
         if not hasattr(self.bus, "TDATA"):
@@ -189,6 +193,7 @@ class AXI4LiteMaster(BusDriver):
     TODO: Kill all pending transactions if reset is asserted.
     """
     _bus_type = AXI4LiteBus
+
 
     def __init__(self, entity, name, clock, **kwargs):
         BusDriver.__init__(self, entity, name, clock, **kwargs)
@@ -293,6 +298,7 @@ class AXI4LiteMaster(BusDriver):
 
         yield RisingEdge(self.clock)
 
+
         if int(result):
             raise AXIProtocolError("Write to address 0x%08x failed with BRESP: %d"
                                % (address, int(result)))
@@ -365,6 +371,7 @@ class AXI4Slave(BusDriver):
         self.bus.RVALID.setimmediatevalue(0)
         self.bus.RLAST.setimmediatevalue(0)
         self.bus.AWREADY.setimmediatevalue(1)
+        self.bus.WREADY.setimmediatevalue(1)
         self.bus.BVALID.setimmediatevalue(0)
         for i in ("BID", "RID", "BRESP", "RRESP"):
             if hasattr(self.bus, i):
@@ -389,11 +396,13 @@ class AXI4Slave(BusDriver):
         clock_re = RisingEdge(self.clock)
 
         while True:
+            self.bus.AWREADY <= 1
+            self.bus.WREADY <= 0
             while True:
-                self.bus.WREADY <= 0
                 yield ReadOnly()
+                # self.bus.WREADY <= 0
                 if self.bus.AWVALID.value:
-                    self.bus.WREADY <= 1
+                    # self.bus.WREADY <= 1
                     break
                 yield clock_re
 
@@ -420,6 +429,9 @@ class AXI4Slave(BusDriver):
 
             yield clock_re
 
+            self.bus.AWREADY <= 0
+            self.bus.WREADY <= 1
+
             while True:
                 if self.bus.WVALID.value:
                     word = self.bus.WDATA.value
@@ -427,7 +439,17 @@ class AXI4Slave(BusDriver):
                     _burst_diff = burst_length - burst_count
                     _st = _awaddr + (_burst_diff * bytes_in_beat)  # start
                     _end = _awaddr + ((_burst_diff + 1) * bytes_in_beat)  # end
-                    self._memory[_st:_end] = array.array('B', word.get_buff())
+                    # _memrange = bytearray(word.get_buff(), 'ascii')
+                    _memrange = word.get_binstr()
+                    _memrange = int(_memrange, 2).to_bytes(len(_memrange) // 8, byteorder = 'little')
+                    _memrange = list(_memrange)
+                    # print(_memrange)
+                    # print(f"bytes_in_beat = {bytes_in_beat}")
+                    # print(self._memory[_st:_end])
+                    # array.array('b')
+                    # _memrange.frombytes(word.get_buff())
+                    self._memory[_st:_end] = _memrange
+                    # array.array('B', word.get_buff())
                     burst_count -= 1
                     if burst_count == 0:
                         break
@@ -438,13 +460,15 @@ class AXI4Slave(BusDriver):
         clock_re = RisingEdge(self.clock)
 
         while True:
+            self.bus.ARREADY <= 1
+            self.bus.RVALID <= 0
             while True:
                 yield ReadOnly()
                 if self.bus.ARVALID.value:
                     break
                 yield clock_re
 
-            yield ReadOnly()
+            # yield ReadOnly()
             _araddr = int(self.bus.ARADDR)
             _arlen = int(self.bus.ARLEN)
             _arsize = int(self.bus.ARSIZE)
@@ -469,9 +493,10 @@ class AXI4Slave(BusDriver):
 
             yield clock_re
 
+            self.bus.ARREADY <= 0
             self.bus.RVALID <= 1
             self.bus.RLAST <= 0
-            while burst_count >= 0:
+            while burst_count > 0:
                 if self.bus.RREADY.value:
                     _burst_diff = burst_length - burst_count
                     _st = _araddr + (_burst_diff * bytes_in_beat)
@@ -481,8 +506,8 @@ class AXI4Slave(BusDriver):
                         byteorder = 'big'
                     word.integer = int.from_bytes(self._memory[_st:_end].tostring(), byteorder=byteorder)
                     self.bus.RDATA <= word
-                    burst_count -= 1
-                    if burst_count == 0:
+                    if burst_count == 1:
                         self.bus.RLAST <= 1
+                    burst_count -= 1
                 yield clock_re
             self.bus.RVALID <= 0

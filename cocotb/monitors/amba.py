@@ -1,4 +1,4 @@
-from cocotb.amba import AXI4StreamBus
+from cocotb.amba import AXI4Bus, AXI4StreamBus
 from cocotb.decorators import coroutine
 from cocotb.monitors import BusMonitor
 from cocotb.triggers import RisingEdge, ReadOnly
@@ -41,3 +41,26 @@ class AXI4StreamMonitor(BusMonitor):
             if valid():
                 vec = self.bus.TDATA.value
                 self._recv(vec.buff)
+
+class AXI4ReadMonitor(BusMonitor):
+    _bus_type = AXI4Bus
+
+    @coroutine
+    def _monitor_recv(self):
+        while True:
+            yield RisingEdge(self.clock)
+            yield ReadOnly()
+            if self.bus.RVALID.value and self.bus.RREADY.value:
+                self._recv(int(self.bus.RDATA.value))
+
+class AXI4WriteMonitor(BusMonitor):
+    _bus_type = AXI4Bus
+
+    @coroutine
+    def _monitor_recv(self):
+        while True:
+            yield RisingEdge(self.clock)
+            yield ReadOnly()
+            if self.bus.WVALID.value and self.bus.WREADY.value:
+                self._recv(int(self.bus.WDATA.value))
+
